@@ -2,6 +2,7 @@ import ursina as ur
 from ursina.prefabs.first_person_controller import FirstPersonController
 from ursina.shaders import lit_with_shadows_shader
 import threading as th
+import Melvicontrol
 
 
 
@@ -52,6 +53,7 @@ class Speedometer(ur.Entity):
         self.pointer.rotation_z = ur.lerp(self.pointer.rotation_z, target_angle, 0.1)
 
 
+
 class Car(ur.Entity):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -64,8 +66,10 @@ class Car(ur.Entity):
     def drive(self, forward_backward, left_right):
         if forward_backward > 0:
             self.speed += self.acceleration
+            th.Thread(target=Melvicontrol.drive_up).start()
         elif forward_backward < 0:
             self.speed -= self.acceleration
+            th.Thread(target=Melvicontrol.drive_down).start()
         else:
             if self.speed > 0:
                 self.speed -= self.friction
@@ -73,6 +77,11 @@ class Car(ur.Entity):
             elif self.speed < 0:
                 self.speed += self.friction
                 if self.speed > 0: self.speed = 0
+            
+            # If no input is given, we should probably tell the robot to stop/coast
+            # For now, simplistic approach: if moving very slowly or stopped, ensure remote is stopped
+            if abs(self.speed) < 0.01:
+                 th.Thread(target=Melvicontrol.stop).start()
         
         self.speed = ur.clamp(self.speed, -0.3, self.max_speed)
 
@@ -81,6 +90,11 @@ class Car(ur.Entity):
         if abs(self.speed) > 0.01:
             direction = 1 if self.speed > 0 else -1
             player.rotation_y += left_right * turn_speed * direction
+            
+            if left_right < 0:
+                th.Thread(target=Melvicontrol.drive_left).start()
+            elif left_right > 0:
+                th.Thread(target=Melvicontrol.drive_right).start()
 
         player.position += player.forward * self.speed
 
