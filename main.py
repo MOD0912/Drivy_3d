@@ -62,14 +62,17 @@ class Car(ur.Entity):
         self.max_speed = 0.8
         self.acceleration = 0.01
         self.friction = 0.005
+        self.already_stopping = True
 
     def drive(self, forward_backward, left_right):
         if forward_backward > 0:
             self.speed += self.acceleration
             th.Thread(target=Melvicontrol.drive_up).start()
+            self.already_stopping = False
         elif forward_backward < 0:
             self.speed -= self.acceleration
             th.Thread(target=Melvicontrol.drive_down).start()
+            self.already_stopping = False
         else:
             if self.speed > 0:
                 self.speed -= self.friction
@@ -80,8 +83,9 @@ class Car(ur.Entity):
             
             # If no input is given, we should probably tell the robot to stop/coast
             # For now, simplistic approach: if moving very slowly or stopped, ensure remote is stopped
-            if abs(self.speed) < 0.01:
+            if abs(self.speed) < 0.01 and not self.already_stopping:
                  th.Thread(target=Melvicontrol.stop).start()
+                 self.already_stopping = True
         
         self.speed = ur.clamp(self.speed, -0.3, self.max_speed)
 
