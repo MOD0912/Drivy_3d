@@ -23,6 +23,16 @@ DEFAULT_PORT = 5001
 DEFAULT_AX = 10
 DEFAULT_AY = 30
 MAX_ABS = 250
+# Where main.py (Melvicontrol callback listener) is listening for events.
+# If main.py runs on a different machine, change this IP to that machine's IP.
+EVENT_TARGET_IP = "127.0.0.1"
+EVENT_TARGET_PORT = 5003
+# Source - https://stackoverflow.com/a
+# Posted by furas
+# Retrieved 2026-01-08, License - CC BY-SA 3.0
+
+
+
 
 class RobotControlGUI:
     """
@@ -43,6 +53,7 @@ class RobotControlGUI:
         self.port = DEFAULT_PORT
 
         # Detect your WLAN IPv4 (used for display only)
+
         self.detected_ip = self.get_wlan_ip() or "0.0.0.0"
 
         self.status = tk.StringVar(value="Waiting for ESP32")
@@ -55,6 +66,9 @@ class RobotControlGUI:
 
         self.framecount = 0
         self.results = []
+
+        # Event spam prevention (avoid spawning hundreds of signs)
+        self._last_event_sent_at = {}
 
         # default camera IP (XIAO ESP32S3 cam, '/capture' endpoint)
         self.cameraip = "192.168.1.214"
@@ -173,6 +187,8 @@ class RobotControlGUI:
                             self.vy = MAX_ABS if self.vy >= 0 else 0
                             self.send_command(self.vx, self.vy)
                         elif conf > 0.6 and model.names[cls] == "Speed Limit 50":
+                            # Notify the 3D world to spawn the sign (cooldown to avoid spam)
+                            self.send_event("SPAWN_SIGN_50", cooldown_s=2.0)
                             self.vy = 125 if self.vy >= 0 else 0
                             self.send_command(self.vx, self.vy)
                             xmean = (x1 + x2) / 2
@@ -196,6 +212,24 @@ class RobotControlGUI:
 
         # schedule next frame
         self.root.after(20, self.run_video)
+
+    # ---------- Events back to main.py ----------
+    def send_event(self, event: str, cooldown_s: float = 1.0):
+        """Send a one-line event to main.py (Melvicontrol callback listener)."""
+        now = time.time()
+        last = self._last_event_sent_at.get(event, 0.0)
+        if now - last < cooldown_s:
+            return
+        self._last_event_sent_at[event] = now
+
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.2)
+                s.connect((EVENT_TARGET_IP, EVENT_TARGET_PORT))
+                s.sendall(event.encode("utf-8"))
+        except Exception:
+            # main.py might not be running; ignore silently to avoid spamming UI
+            pass
 
     # ---------- Buttons / Keys ----------
     def button_up(self, _):     self.drivy_up()
@@ -233,6 +267,7 @@ class RobotControlGUI:
 
     def accept_loop(self):
         # Bind on all interfaces so ESP32 can reach us via your WLAN IP
+        print("Starting socket server...")
         bind_ip = "0.0.0.0"
         self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -343,5 +378,6 @@ class RobotControlGUI:
 if __name__ == "__main__":
     root = tk.Tk()
     app = RobotControlGUI(root)
+    print("--- Robot Control GUI Started ---")
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
     root.mainloop()
