@@ -7,10 +7,10 @@ import Melvicontrol
 
 
 class Daddy(ur.Entity):
-    def __init__(self, position=(0, 0, 0), rotation=(-90,0,0), scale=0.02, spawn_high=True, **kwargs):
+    def __init__(self, position=(0, 0, 0), rotation=(0, 90, 0), scale=0.02, spawn_high=True, **kwargs):
         if spawn_high: 
             position = (position[0], position[1] + 100, position[2])
-        super().__init__(position=position, rotation=rotation, shader=lit_with_shadows_shader, scale=scale, **kwargs)
+        super().__init__(position=position, world_rotation=rotation+(-90, 0, -90), shader=lit_with_shadows_shader, scale=scale, **kwargs)
         
         self.BODY = ur.Entity(
             parent=self,
@@ -65,6 +65,8 @@ class Car(ur.Entity):
         self.already_stopping = True
 
     def drive(self, forward_backward, left_right):
+        #ur.time.sleep(0.05) #Counteract the delay from the esp code to avoid input stacking
+
         if forward_backward > 0:
             self.speed += self.acceleration
             th.Thread(target=Melvicontrol.drive_up).start()
@@ -80,7 +82,6 @@ class Car(ur.Entity):
             elif self.speed < 0:
                 self.speed += self.friction
                 if self.speed > 0: self.speed = 0
-            
             # If no input is given, we should probably tell the robot to stop/coast
             # For now, simplistic approach: if moving very slowly or stopped, ensure remote is stopped
             if abs(self.speed) < 0.01 and not self.already_stopping:
@@ -99,11 +100,17 @@ class Car(ur.Entity):
                 th.Thread(target=Melvicontrol.drive_left).start()
             elif left_right > 0:
                 th.Thread(target=Melvicontrol.drive_right).start()
-
+        
         player.position += player.forward * self.speed
 
     def update_animation(self):
         while True:
+            events = Melvicontrol.get_events()
+            for event in events:
+                if event == "SPAWN_SIGN_50":
+                    print("Spawning Sign due to YOLO detection!")
+                    ur.invoke(lambda: Daddy(position=(player.x + player.forward[0]*2, -0.19, player.z + player.forward[2]*2), rotation=(0, player.rotation_y + 180, 0)))
+
             forward_backward = 0 if (('s' not in self.lst and 'w' not in self.lst) or ('s' in self.lst and 'w' in self.lst)) else (1 if 'w' in self.lst else -1)
             left_right = 0 if (('a' not in self.lst and 'd' not in self.lst) or ('a' in self.lst and 'd' in self.lst)) else (1 if 'd' in self.lst else -1)
             self.drive(forward_backward, left_right)
@@ -132,7 +139,10 @@ def input(key):
     if key == "down arrow":
         player.y -= 0.1
     if key == "space":
-        Daddy(position=(ur.random.uniform(-20,20),0,ur.random.uniform(-20,20)))
+        Daddy(position=car.world_position+player.forward*10, rotation=car.world_rotation)
+        print(car.world_rotation)
+        print(car.world_position)
+        print(player.forward)
     text.text = f"{key}; {speedometer.speed:.1f} km/h"
     if key == "f":
         ur.camera.fov = 90 if ur.camera.fov == 30 else 30
@@ -147,9 +157,9 @@ def input(key):
 
 if __name__ == '__main__':
     app = ur.Ursina(fullscreen=True)
+    player = FirstPersonController(gravity=0, position=(0,1,0))
 
     ground = ur.Entity(model='plane', scale=(100, 1, 100), texture_scale=(100,100), texture='grass', collider='box')
-    player = FirstPersonController(gravity=0, position=(0,1,0))
     player.update = None # Disable default movement
     car = Car(parent=player, model="2025_bugatti_bolide", collider="mesh", scale=150, rotation=(0,180,0), shader=lit_with_shadows_shader)
     player.collider = car.collider
