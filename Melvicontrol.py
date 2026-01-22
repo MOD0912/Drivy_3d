@@ -1,13 +1,52 @@
 import socket
 import threading
 import time
+import queue
 
 HOST = "0.0.0.0"   # listen on all interfaces
 PORT = 9999        # pick a port that's open on your machine
+CALLBACK_PORT = 5003 # Port for receiving events from the remote controller
 
 # Target (socket_client_test.py)
 TARGET_IP = "127.0.0.1"
 TARGET_PORT = 5002
+
+# Queue to store incoming events for main.py to process
+event_queue = queue.Queue()
+
+def get_events():
+    """Returns a list of all pending events."""
+    events = []
+    try:
+        while True:
+            events.append(event_queue.get_nowait())
+    except queue.Empty:
+        pass
+    return events
+
+def start_event_listener():
+    """Starts a server to listen for events from socket_client_test.py."""
+    def listener_loop():
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("0.0.0.0", CALLBACK_PORT))
+                s.listen()
+                print(f"Melvicontrol Callback Listener on port {CALLBACK_PORT}")
+                while True:
+                    conn, _ = s.accept()
+                    with conn:
+                        data = conn.recv(1024).decode(errors='ignore').strip()
+                        if data:
+                            print(f"Received Event: {data}")
+                            event_queue.put(data)
+            except Exception as e:
+                print(f"Callback Listener Failed: {e}")
+
+    t = threading.Thread(target=listener_loop, daemon=True)
+    t.start()
+
+start_event_listener() # Auto-start listener on import
 
 def send_to_target(cmd):
     """Connects to socket_client_test.py and sends the command."""
